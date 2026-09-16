@@ -1,0 +1,14 @@
+[package]
+name = "tpt-fab-aggregate"
+description = "Manufacturing Outcome file exchange: schema, consent, client-side aggregation, minimum-cohort + differential-privacy protection. Zero dependencies, zero network code."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

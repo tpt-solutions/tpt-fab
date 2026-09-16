@@ -1,0 +1,14 @@
+[package]
+name = "tpt-fab-litho"
+description = "Pluggable patterning-backend trait for tpt-fab: DUV multi-patterning, EUV, nanoimprint, and e-beam backends"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,316 @@
+# RFC-002: Fab-Facing Manufacturing Extension — Wafer-Level Backend & Bidirectional Feedback Loop
+
+**Status:** Proposed
+
+**Target Workspace:** a new standalone repository, `tpt-solutions/tpt-fab`, kept separate from
+`tpt-silicon` deliberately (different runtime, different audience, different lifecycle — see
+Section 1). SECS/GEM message handling lives inside `tpt-fab` itself rather than being split out
+into `tpt-protocol`; the whole operational stack — protocol layer, MES/APC, litho backends, process
+simulation — stays in one place. `tpt-fab` consumes `tpt-silicon`'s output artifacts and, per
+RFC-001, its `tpt-silicon-cam` exports; it does not share a Cargo workspace with either. Both use
+`tpt-telos` and `tpt-ai` as cross-cutting dependencies. Extends RFC-001 (`spec2.txt`) rather than
+replacing it.
+
+**Goal:** Build `tpt-fab`, a new repository covering two things neither `tpt-silicon` nor RFC-001
+addresses: (1) the **wafer-fabrication** layer — the SECS/GEM-speaking, lithography-technology-
+agnostic control and process-simulation software that sits between a finished layout and an actual
+wafer, and (2) a **bidirectional manufacturing feedback loop** — a formal, privacy-respecting,
+file-based return channel that lets any fab (wafer or PCB) send real outcome data back, so the
+tools' simulators and yield models can be fine-tuned against ground truth without `tpt-solutions`
+ever owning fab hardware.
+
+RFC-001 already established the pattern this RFC extends: a dual-track exporter
+(`ManufacturingExporter`) sending both dumb legacy formats and an intent-preserving, formally
+verified Semantic Manufacturing Payload (SMP). That pattern was one-directional (design → fab).
+This RFC makes it round-trip, and applies the same philosophy one layer deeper, to wafer
+fabrication itself.
+
+---
+
+## 1. Executive Summary
+
+`tpt-silicon` today covers RTL-to-GDSII (Silica → synthesis → place & route → DRC, tech-mapped to
+sky130) and, per RFC-001, is being extended upward into PCB/system co-design. Neither covers what
+happens *at* the fab: no fab speaks GDSII or Gerber directly without an equipment-control and
+process layer in between, and neither existing spec has any mechanism for the tool to learn from
+what actually happens on a real production line.
+
+This RFC proposes two additions, deliberately scoped to what is buildable and honestly validatable
+without owning fab hardware:
+
+- **`tpt-fab`** — a permissively-licensed SECS/GEM (SEMI E4/E5/E30/E37/E39/E40/E90/E116, the
+  GEM300 suite) equipment-communication and MES/APC layer, with a pluggable backend per
+  lithography technology (EUV, DUV multi-patterning, nanoimprint, e-beam) so the tool is not
+  betting on a single winner in an actively diversifying market.
+- **A Manufacturing Outcome file exchange**, extending RFC-001's `ManufacturingExporter` trait
+  with an inbound `ManufacturingOutcomeIngestor`, so both wafer fabs (via `tpt-fab`) and PCB fabs
+  (via `tpt-silicon-cam`, RFC-001) can produce an intermediate outcome file — aggregated and
+  anonymized *on their own infrastructure, using code we publish* — which a person at that fab then
+  chooses, deliberately and out of band, to send to `tpt-solutions`. There is no automated
+  telemetry, no live API call, and no background upload anywhere in this loop. Every file that
+  reaches `tpt-solutions` reached it because a human at the fab decided to send it.
+
+**Repo boundary, decided:** `tpt-fab` is its own repository, not new crates inside `tpt-silicon`.
+`tpt-silicon` (plus its RFC-001 extension) is design-time tooling a chip or PCB designer runs on a
+desktop; `tpt-fab` is operational software a fab runs against live equipment, with its own
+compliance surface and release cadence. A SECS/GEM message-framing layer could in principle have
+been split into `tpt-protocol` (which already unifies 19 other industrial/medical/hardware
+protocols) rather than living inside `tpt-fab` — considered and deliberately rejected, so the whole
+fab-facing stack, protocol layer included, stays in one repository rather than being split across
+two for a marginal reuse benefit.
+
+Positioning, stated plainly because it shapes every design decision below: this is not aimed at
+ASML, Applied Materials, or the other tier-one toolmakers, whose control software is safety-
+certified and IP-locked around hardware we will never get API access to. It is aimed at the tier
+below — NIL vendors and domestic litho programs still building their software stack from scratch,
+and the long tail of mature-node, analog, power, and specialty fabs who currently have nothing
+between "nothing" and enterprise EDA/MES licensing. The goal is to be good enough to matter to
+them, not to match a $10M TCAD license.
+
+---
+
+## 2. Proposed New Crates
+
+Following RFC-001's convention of a domain-specific prefix, wafer-fab crates use `tpt-fab-*`.
+
+### A. `tpt-fab` (New — core)
+
+* **Purpose:** SECS/GEM equipment communication, recipe management, lot tracking, and APC,
+  independent of which patterning technology sits underneath.
+* **Key features:** HSMS/SECS-II message layer built directly against the published SEMI
+  standards; a recipe versioning and drift-detection model; an equipment-simulator harness so the
+  stack can be validated end-to-end without real tool access (the same practice fabs themselves
+  use before integrating new equipment).
+* **Explicitly not included:** anything that assumes a specific toolmaker's proprietary extensions
+  to the standard. Spec-compliance first, vendor quirks handled as opt-in adapters later if a
+  design partner needs them.
+
+### B. `tpt-fab-litho` (New — pluggable patterning backend)
+
+* **Purpose:** A thin `PatterningBackend` trait with one implementation per lithography
+  technology, so `tpt-fab`'s recipe/scheduling/APC core stays identical regardless of which
+  technology a given fab runs.
+* **Key features (per backend):**
+  - `EuvBackend` — projection-optics exposure sequencing, pellicle/dose bookkeeping.
+  - `DuvMultiPatternBackend` — multi-pass exposure ordering and overlay budget tracking (the
+    dominant approach at mature and many leading-edge-adjacent nodes today, including domestic
+    programs standing up ArF immersion capacity).
+  - `NilBackend` — imprint/separation cycle control, template defect tracking (J-FIL-style
+    nanoimprint, currently moving from research partners toward early production evaluation).
+  - `EbeamBackend` — vector-scan control, primarily for mask writing and low-volume direct-write.
+* **Design intent:** none of these back real hardware today. Each backend is built and validated
+  against the *published process characteristics* of its technology and against `tpt-fab`'s own
+  equipment simulator, explicitly flagged as unvalidated-against-real-hardware until a design
+  partner using that technology adopts it.
+
+### C. `tpt-fab-process` (New — simulation, explicitly best-effort)
+
+* **Purpose:** OPC (optical proximity correction) and etch/deposition/thermal process simulation.
+* **Key features:** mask-correction suggestions for the `PatterningBackend` in use; a coarse
+  etch/deposition simulator flagging obvious process-window violations before a design is sent to
+  a fab.
+* **Explicit non-goal, stated in the crate's own docs so users don't overtrust it:** this is not a
+  TCAD replacement. Without calibration data from real fab runs, it cannot match the accuracy of
+  Synopsys Sentaurus or equivalent. The target is "catches the mistakes a mature-node or emerging
+  fab currently catches with nothing," not "matches leading-edge TCAD." Section 4 below is what
+  closes this gap over time.
+* **Validation path available today:** designs produced via `tpt-silicon`'s existing sky130
+  tech-mapping can be run through efabless/Skywater-style MPW shuttle programs, which return real
+  fabricated silicon for a few hundred dollars per submission. This is real hardware feedback,
+  just at a mature node and on a slow, batched cadence — worth building the ingestion path for
+  from day one (see Section 4.4).
+
+---
+
+## 3. RFC-001 Reference: What's Already Bidirectional-Ready
+
+RFC-001's `ManufacturingExporter` trait (Section 4 of `spec2.txt`) already defines Track 2 (SMP) as
+an intent-preserving payload with a `tpt-telos` proof manifest, sent to a fab's API. This RFC does
+not change that trait — it adds the missing return leg, defined once and shared by both the PCB
+track (RFC-001) and the new wafer-fab track (Section 2 above), so `tpt-ai`'s fine-tuning consumer
+has a single ingestion path regardless of which manufacturing layer the data came from.
+
+---
+
+## 4. The Manufacturing Outcome File Exchange
+
+This is a **file exchange, not a service**. Nothing in this section implies a network endpoint
+`tpt-solutions` operates, a client that phones home, or any transmission that isn't a deliberate,
+individually-initiated act by a person at the fab. The trait below produces and consumes a file —
+it is not a client for a live API.
+
+### 4.1 Core trait
+
+```rust
+// Runs entirely on the fab's own infrastructure. Produces a file; sends nothing.
+pub trait OutcomeFileWriter {
+    fn write_outcome_file(&self, report: OutcomeReport, path: &Path) -> Result<(), CamError>;
+}
+
+// Runs entirely on tpt-solutions' side, on a file that arrived by whatever manual means
+// the fab chose (email attachment, upload portal, physical media — out of scope for this crate).
+pub trait OutcomeFileReader {
+    fn read_outcome_file(&self, path: &Path) -> Result<OutcomeReport, CamError>;
+}
+
+pub struct OutcomeReport {
+    pub payload_manifest_id: Uuid,       // ties back to the exact SMP/recipe payload sent out
+    pub track: ManufacturingTrack,       // Pcb | WaferLitho(PatterningTech) — one shared schema
+    pub measured_geometry: Vec<GeometryDeviation>,   // as-built vs. as-designed, keyed by ID
+    pub electrical_test: Vec<ElectricalMeasurement>, // impedance/skew/IR-drop, keyed to FabricLink IDs
+    pub yield_outcome: YieldSummary,
+    pub process_notes: Vec<ProcessDeviation>,
+    pub consent: ConsentScope,           // see 4.3 — machine-readable, enforced in the pipeline
+    pub schema_version: SchemaVersion,   // see 4.5
+    pub signature: Option<Signature>,    // see 4.8 — authenticates the file's origin, not its transport
+}
+```
+
+Everything is keyed against the same semantic IDs the outbound payload used (`FabricLink.id`,
+footprint IDs, net names, recipe/lot IDs) rather than raw coordinates — this is what makes the
+exchange useful for calibration rather than just a pile of unstructured data. A predicted 85Ω
+trace that measured 87Ω is a directly usable calibration point for `tpt-silicon-si-pi`'s field
+solver; an anonymous pile of Gerber diffs is not.
+
+### 4.2 Client-side aggregation, by design
+
+Because this project is MIT/Apache, there is no proprietary boundary to hide aggregation logic
+behind — and that cuts the right way here. The aggregation/anonymization step runs **on the fab's
+own infrastructure, producing only a local file**, using code published in this same repository
+(`tpt-fab-aggregate` or a module of `tpt-fab-process`), so a fab can read exactly what that file
+will contain before anyone decides to send it anywhere. Nothing raw crosses the boundary, ever, by
+construction — there is no boundary-crossing step in this crate at all, only file generation.
+Concretely:
+
+* Per-board/per-wafer identifying data never leaves the fab's network, because nothing in this
+  crate has a network egress path — it writes to disk and stops.
+* The output file contains statistical summaries (deviation distributions, not individual
+  measurements) unless a fab explicitly opts into a closer 1:1 data-sharing relationship and
+  configures the writer accordingly.
+* The published aggregation code becomes the trust mechanism: "verify it yourself, and verify
+  there's no send step in the code at all" replaces "trust our privacy policy."
+* What happens to the resulting file — sent by email, uploaded through a portal, mailed on a USB
+  drive, or never sent at all — is entirely the fab's decision, made after the file exists and its
+  contents are already known to them.
+
+### 4.3 Consent scope, enforced structurally
+
+```rust
+pub enum ConsentScope {
+    PrivateBilateral,      // raw data, shared only between this fab and tpt-solutions
+    AggregatedContribution, // fab-side aggregation only; feeds the shared public model
+    NoSharing,              // outcome tooling used locally, nothing transmitted
+}
+```
+
+`ConsentScope` travels *inside* the `OutcomeReport` itself rather than as an out-of-band agreement,
+so the ingestion pipeline enforces it automatically instead of relying on policy compliance after
+the fact.
+
+### 4.4 Minimum-cohort protection
+
+Aggregation alone can still leak sensitive information if a fab is the sole contributor for a
+given process node or recipe — an "aggregate" of one data point is not private. `tpt-fab-aggregate`
+should withhold publishing any aggregate statistic until a configurable minimum number of
+independent contributors (e.g. N ≥ 5) exist for that specific process/node/technology bucket,
+falling back to differential-privacy noise injection as a second layer for smaller cohorts that
+still want to contribute. This applies equally to the sky130 shuttle-run ingestion path (Section
+2C) — MPW submissions from many independent designers are a natural, already-anonymous-by-default
+cohort to start with.
+
+### 4.5 Schema versioning
+
+Both `SmpPayload` (RFC-001) and `OutcomeReport` need explicit version negotiation from day one —
+fabs and `tpt-solutions` will not upgrade in lockstep. `SchemaVersion` should be a simple semver
+field with the ingestion pipeline rejecting or best-effort-migrating unrecognized minor versions,
+never silently misinterpreting a field that changed meaning between versions.
+
+### 4.6 Data quality / anti-poisoning
+
+A shared fine-tuning signal is only as good as its worst contributor. Before an `OutcomeReport`
+feeds any model (`tpt-ai`'s yield heatmap, `tpt-silicon-si-pi`'s solver calibration, `tpt-fab-
+process`'s OPC/etch corrections), it should pass basic anomaly detection against the existing
+aggregate distribution — flagging reports far outside the expected range for review rather than
+silently absorbing them. This matters more once the incentive structure (Section 4.7) exists,
+since an incentive to contribute is also an incentive to game the system.
+
+### 4.7 Incentive structure
+
+Fabs will not generate and send this file for nothing, especially given the extra manual step.
+State the exchange explicitly rather than assuming goodwill: contributing (even at
+`AggregatedContribution` level) unlocks the real-time "shift-left" DRC/CAM turnaround already
+described in RFC-001 Section 5, plus access to the yield-heatmap tooling in `tpt-ai`.
+Non-contributors still get the full open-source tool; contributors get a better-calibrated one.
+The manual send step is a feature here, not friction to design away — it means every contribution
+is a deliberate, informed act by someone who has already seen exactly what's in the file.
+
+### 4.8 No automated telemetry — file exchange only
+
+This is the load-bearing design constraint of the whole loop, not an optional mode: `tpt-fab` and
+`tpt-silicon-cam` never open a network connection to send outcome data anywhere, on any schedule,
+under any configuration. `OutcomeFileWriter` (4.1) writes to a local path and returns. What happens
+next is entirely outside this codebase's control — the fab emails the file, uploads it through
+whatever channel `tpt-solutions` documents, or doesn't send it at all. This also sidesteps the
+regulated/air-gapped/geopolitically-sensitive-facility problem raised earlier by construction
+rather than by configuration: there is no "offline mode" to enable, because there is no online mode
+to begin with. `Signature` (4.1) exists to let `tpt-solutions` verify a received file genuinely
+came from the fab it claims to, once that fab has already decided to send it — it authenticates the
+file's origin, not any transport.
+
+### 4.9 Open dataset release
+
+Since the whole project is MIT/Apache, the resulting *aggregated* outcome dataset is a natural
+candidate for its own open release (with attribution to contributing fabs who opt in, not raw
+data) rather than staying internal to `tpt-solutions`. This reinforces the contribution incentive
+(public credit, community goodwill) and keeps the project consistent with its own licensing
+philosophy — the calibration data that makes the tools better should be as open as the tools
+themselves, to the extent privacy allows.
+
+---
+
+## 5. Recommended Execution Plan
+
+**Phase 1 — `tpt-fab` core (Weeks 1–6):** SECS/GEM message layer against the published standards,
+equipment simulator harness, recipe/lot data model. No patterning-technology assumptions yet.
+Milestone: a simulated equipment session completes a full recipe cycle against `tpt-fab`'s own
+simulator with no real hardware involved.
+
+**Phase 2 — `tpt-fab-litho` backends (Weeks 7–10):** `DuvMultiPatternBackend` first (most mature,
+most fabs running it today), then `EuvBackend`, `NilBackend`, `EbeamBackend` as thinner follow-ons
+sharing the same trait. Milestone: swapping the backend behind `tpt-fab`'s core requires no
+changes to recipe/lot/APC logic.
+
+**Phase 3 — `tpt-fab-process` simulation, explicitly scoped (Weeks 11–16):** OPC suggestion engine
+and coarse etch/deposition simulator, documented from day one as best-effort. Milestone: a sky130
+design run through the simulator flags at least the class of issues DRC alone would miss.
+
+**Phase 4 — Bidirectional outcome file exchange, both tracks (Months 4–6):** `OutcomeReport`
+schema, `tpt-fab-aggregate` client-side aggregation module (published, auditable, file-out only —
+no network code at all), minimum-cohort and anomaly-detection safeguards, signature verification
+on receipt. Wire into RFC-001's `tpt-silicon-cam` for the PCB track and `tpt-fab` for the wafer
+track simultaneously, since they share one schema. Milestone: a sky130 MPW shuttle-run result
+round-trips through the full exchange — design exported, real silicon returned, outcome file
+generated locally, emailed, and manually ingested on receipt — end to end, without a design
+partner.
+
+**Phase 5 — Design partner pilot (Month 6+):** approach a mature-node or NIL-adjacent fab (per the
+positioning in Section 1) to pilot the file exchange beyond the sky130 shuttle-run path. Not
+scheduled tighter than "when Phase 4 is solid," since this is the one phase genuinely gated on
+someone outside `tpt-solutions` saying yes.
+
+---
+
+## 6. Open Questions
+
+- Minimum cohort size (N) for aggregate publication — 5 is a placeholder, not a validated number.
+- Whether `tpt-fab-aggregate`'s differential-privacy noise parameters need to vary by field
+  sensitivity (yield numbers vs. geometry deviations plausibly warrant different epsilon values).
+- Whether the open aggregated dataset (4.9) should live in this repo, a dedicated `tpt-fab-data`
+  repo, or an external dataset host — affects versioning and citation practices.
+- Whether `tpt-fab-litho`'s DUV backend should track SMEE-style domestic ArF immersion tooling
+  characteristics specifically, or stay generic to DUV multi-patterning broadly — a specific-first
+  approach might get real-world validation faster given where near-term adoption is most plausible.
+- Since every outcome file arrives by manual, out-of-band means (email, most likely), someone at
+  `tpt-solutions` has to receive it, verify the signature, and run it through `OutcomeFileReader`
+  by hand — this doesn't scale the way an automated pipeline would, and is a genuine operational
+  cost worth planning for once contribution volume is more than a handful of fabs a month.

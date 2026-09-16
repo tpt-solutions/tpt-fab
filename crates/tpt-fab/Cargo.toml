@@ -1,0 +1,17 @@
+[package]
+name = "tpt-fab"
+description = "Wafer-fab SECS/GEM core: HSMS/SECS-II/GEM300 stack, recipe versioning + drift detection, lot tracking, equipment-simulator harness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+tpt-fab-litho = { workspace = true }
+
+[dev-dependencies]
+
+[lints]
+workspace = true

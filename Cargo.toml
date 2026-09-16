@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tpt-fab",
+    "crates/tpt-fab-litho",
+    "crates/tpt-fab-process",
+    "crates/tpt-fab-aggregate",
+]
+
+[workspace.package]
+version = "0.1.0"
+description = "Wafer-fabrication SECS/GEM control & process-simulation stack with a bidirectional, file-based Manufacturing Outcome exchange"
+authors = ["TPT Solutions"]
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tpt-solutions/tpt-fab"
+homepage = "https://github.com/tpt-solutions/tpt-fab"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[workspace.dependencies]
+tpt-fab = { version = "0.1.0", path = "crates/tpt-fab" }
+tpt-fab-litho = { version = "0.1.0", path = "crates/tpt-fab-litho" }
+tpt-fab-process = { version = "0.1.0", path = "crates/tpt-fab-process" }
+tpt-fab-aggregate = { version = "0.1.0", path = "crates/tpt-fab-aggregate" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
