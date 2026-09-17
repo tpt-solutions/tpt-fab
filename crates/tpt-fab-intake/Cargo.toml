@@ -1,0 +1,19 @@
+[package]
+name = "tpt-fab-intake"
+description = "Semi-automated local intake queue for manually-delivered Manufacturing Outcome files: signature verify, schema check, anomaly screen, disposition to accepted/flagged/rejected"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+keywords = ["intake", "ingestion", "manufacturing", "file-exchange", "review"]
+categories = ["command-line-utilities", "data-structures", "encoding"]
+readme = "README.md"
+
+[dependencies]
+tpt-fab-aggregate = { workspace = true }
+
+[lints]
+workspace = true

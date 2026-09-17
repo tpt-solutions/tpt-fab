@@ -129,7 +129,7 @@ impl AnomalyDetector {
     /// not what was accepted).
     pub fn screen(&mut self, report: &OutcomeReport) -> ScreenResult {
         let yield_rate = report.yield_outcome.yield_rate();
-        let geom_dev = mean_abs_geometry_deviation(report);
+        let geom_dev = mean_abs_geometry_deviation_um(report);
         let elec_ratio = mean_electrical_ratio(report);
 
         let mut findings = Vec::new();
@@ -165,13 +165,45 @@ impl AnomalyDetector {
     }
 }
 
+impl AnomalyDetector {
+    /// Read-only view of the accumulated distributions — `(yield, geometry, electrical)` —
+    /// for persistence by caller-side tools (e.g. the intake queue's ledger), so screening
+    /// history accumulates across process runs rather than resetting each time.
+    pub fn history(&self) -> (&[f64], &[f64], &[f64]) {
+        (&self.yield_dist.values, &self.geometry_dist.values, &self.electrical_dist.values)
+    }
+
+    /// Seeds the distributions from previously persisted [`AnomalyDetector::history`].
+    /// Replayed observations count toward `min_history`, so a fresh process can screen
+    /// immediately instead of warming up.
+    pub fn with_history(
+        mut self,
+        yield_history: &[f64],
+        geometry_history: &[f64],
+        electrical_history: &[f64],
+    ) -> Self {
+        for v in yield_history {
+            self.yield_dist.observe(*v);
+        }
+        for v in geometry_history {
+            self.geometry_dist.observe(*v);
+        }
+        for v in electrical_history {
+            self.electrical_dist.observe(*v);
+        }
+        self
+    }
+}
+
 impl Default for AnomalyDetector {
     fn default() -> Self {
         Self::new()
     }
 }
 
-fn mean_abs_geometry_deviation(report: &OutcomeReport) -> Option<f64> {
+/// Mean absolute as-built vs. as-designed deviation across the report's geometry entries,
+/// µm — the metric the geometry screening distribution tracks.
+pub fn mean_abs_geometry_deviation_um(report: &OutcomeReport) -> Option<f64> {
     if report.measured_geometry.is_empty() {
         return None;
     }
@@ -180,7 +212,9 @@ fn mean_abs_geometry_deviation(report: &OutcomeReport) -> Option<f64> {
     Some(sum / report.measured_geometry.len() as f64)
 }
 
-fn mean_electrical_ratio(report: &OutcomeReport) -> Option<f64> {
+/// Mean measured/designed ratio across the report's electrical entries — the metric the
+/// electrical screening distribution tracks.
+pub fn mean_electrical_ratio(report: &OutcomeReport) -> Option<f64> {
     let ratios: Vec<f64> = report
         .electrical_test
         .iter()

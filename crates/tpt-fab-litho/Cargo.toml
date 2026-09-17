@@ -1,6 +1,9 @@
 [package]
 name = "tpt-fab-litho"
 description = "Pluggable patterning-backend trait for tpt-fab: DUV multi-patterning, EUV, nanoimprint, and e-beam backends"
+keywords = ["lithography", "euv", "duv", "nanoimprint", "e-beam"]
+categories = ["simulation", "science"]
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

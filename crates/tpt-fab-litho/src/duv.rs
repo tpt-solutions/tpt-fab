@@ -120,8 +120,9 @@ impl PatterningBackend for DuvMultiPatternBackend {
 
         let k1 = self.k1_for_pitch(request.layer.min_pitch_nm);
         let litho_passes = cfg.scheme.litho_passes();
+        let plural = if litho_passes == 1 { "" } else { "es" };
         notes.push(format!(
-            "{:?}: {} litho passes, k1={k1:.2} at pitch {:.0} nm",
+            "{:?}: {} litho pass{plural}, k1={k1:.2} at pitch {:.0} nm",
             cfg.scheme, litho_passes, request.layer.min_pitch_nm
         ));
 

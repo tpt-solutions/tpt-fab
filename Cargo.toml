@@ -5,6 +5,7 @@ members = [
     "crates/tpt-fab-litho",
     "crates/tpt-fab-process",
     "crates/tpt-fab-aggregate",
+    "crates/tpt-fab-intake",
 ]
 
 [workspace.package]
@@ -25,6 +26,7 @@ tpt-fab = { version = "0.1.0", path = "crates/tpt-fab" }
 tpt-fab-litho = { version = "0.1.0", path = "crates/tpt-fab-litho" }
 tpt-fab-process = { version = "0.1.0", path = "crates/tpt-fab-process" }
 tpt-fab-aggregate = { version = "0.1.0", path = "crates/tpt-fab-aggregate" }
+tpt-fab-intake = { version = "0.1.0", path = "crates/tpt-fab-intake" }
 
 [profile.release]
 opt-level = 3

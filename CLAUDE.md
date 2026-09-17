@@ -19,6 +19,7 @@ tpt-fab-litho      (leaf — PatterningBackend trait + DUV/EUV/NIL/E-beam backen
 tpt-fab-aggregate  (leaf — outcome file exchange; ZERO dependencies, ZERO network code)
 tpt-fab            → depends on tpt-fab-litho (SECS/GEM core, recipe/lot/APC, simulator)
 tpt-fab-process    → depends on tpt-fab-litho + tpt-fab-aggregate (OPC/process sim, sky130 ingestion)
+tpt-fab-intake     → depends on tpt-fab-aggregate (receiver-side semi-automated intake queue CLI; local files only, no egress)
 ```
 - `tpt-fab-aggregate` has a hard acceptance criterion: **no network-capable dependency in its
   Cargo.toml, no egress code path at all.** It is currently dependency-free (`std` only); keep it
@@ -28,6 +29,17 @@ tpt-fab-process    → depends on tpt-fab-litho + tpt-fab-aggregate (OPC/process
   must not change recipe/lot/APC logic (Phase 2 milestone; there is a test asserting this).
 - Vendor-proprietary SECS/GEM extensions are excluded from core. The only sanctioned seam is
   `tpt_fab::adapter::VendorAdapter` — opt-in, registered explicitly at runtime, default none.
+
+## Per-crate docs & metadata (house convention, mirror `tpt-telos`/`tpt-protocol`)
+- Every crate has its own `README.md` (positioning, usage, module map, design notes) and its
+  own `CHANGELOG.md` in the crate directory (Keep a Changelog / SemVer format). Entries must
+  match what is **actually published on crates.io** — all four crates are unpublished, so each
+  changelog has only an `## [Unreleased]` section. After `cargo publish`, promote the
+  `Unreleased` entry to a dated `[x.y.z]` section.
+- Every crate manifest carries `keywords` (max 5) and `categories` (crates.io slugs, max 5)
+  plus `readme = "README.md"` so `cargo publish` bundles the README.
+- Runnable examples live in each crate's `examples/` directory; CI's clippy `--all-targets`
+  gate compiles them. Keep README code snippets consistent with the compiled examples.
 
 ## Cross-cutting dependencies (spec)
 `tpt-telos` and `tpt-ai` are cross-cutting dependencies per the spec, but neither is published to

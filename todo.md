@@ -8,10 +8,16 @@ truth: [`spec.txt`](./spec.txt). Repo is standalone (`tpt-solutions/tpt-fab`), n
 workspace with `tpt-silicon` / `tpt-protocol` / `tpt-telos`. Cross-cutting deps: `tpt-telos`,
 `tpt-ai`. Consumes output artifacts from `tpt-silicon` and (per RFC-001) `tpt-silicon-cam`.
 
-**Status (2026-09-16):** Phases 1–4 implemented — all four crates in place, **103 tests green**,
-CI gates (`fmt --check`, `clippy -D warnings`, `test`) clean. Remaining items below are the ones
-genuinely gated on external parties (Phase 5, real MPW silicon, the PCB-repo wiring) or on real
-contribution volume (dataset publication).
+**Status (2026-09-16):** Phases 1–4 implemented — five crates in place (core, litho, process,
+aggregate, intake), **110+ tests green**, CI gates (`fmt --check`, `clippy -D warnings`,
+`test`) clean. Every crate has its own README, CHANGELOG (Keep a Changelog, `[Unreleased]`
+until published), crates.io `keywords`/`categories`, and a compiled, runnable `examples/`
+tour. The one-shared-schema contract for both manufacturing tracks is pinned by an
+integration test; the receiver-side semi-automated intake queue is implemented
+(`tpt-fab-intake`); the `tpt-fab-data` release runbook is in `docs/`. Remaining items below
+are genuinely gated on external parties (Phase 5, real MPW silicon, the `tpt-silicon-cam`-repo
+exporter wiring, actual dataset publication once real data exists). crates.io publishing is
+deliberately not started.
 
 ---
 
@@ -28,6 +34,10 @@ contribution volume (dataset publication).
 - [x] `README.md` — project overview, positioning statement (Section 1), links to `spec.txt`
 - [x] CI: `.github/workflows/ci.yml` (fmt/clippy/test), mirroring `tpt-protocol`/`tpt-telos`
 - [x] `AGENTS.md` / `CLAUDE.md` agent-facing dev docs (sibling-repo convention)
+- [x] Per-crate docs & metadata: `README.md` + `CHANGELOG.md` (Keep a Changelog,
+      `[Unreleased]`-only while unpublished) in every crate, `keywords` + `categories` +
+      `readme` in every manifest, runnable `examples/` per crate (CI clippy `--all-targets`
+      compiles them)
 
 ---
 
@@ -148,12 +158,20 @@ contribution volume (dataset publication).
       earns nothing (`crates/tpt-fab-aggregate/src/incentive.rs`)
 - [ ] Wire into `tpt-silicon-cam` (PCB track) and `tpt-fab` (wafer track) simultaneously against the
       one shared schema — **wafer track wired here** (`tpt-fab` simulator outcomes and the
-      sky130 shuttle path both produce/ingest this schema); the PCB-track wiring lands in the
-      `tpt-silicon-cam` repository against this same shared schema (separate repo, separate RFC)
+      sky130 shuttle path both produce/ingest this schema); the PCB track has a compiled,
+      runnable reference integration (`crates/tpt-fab-aggregate/examples/pcb_track.rs`) and
+      the shared-schema contract is pinned by an integration test
+      (`crates/tpt-fab-aggregate/tests/shared_schema_contract.rs`: both tracks are
+      byte-identical to the pipeline modulo the `track` field, and every protection applies
+      equally to both). The actual exporter wiring lands in the `tpt-silicon-cam` repository
+      (separate repo, separate RFC)
 - [ ] Open aggregated dataset release — publish to a dedicated **`tpt-fab-data`** repo (see
       Decisions), with attribution to opted-in contributing fabs, no raw data — the release
       artifact is implemented and tested (`dataset.rs`: attribution-only, aggregate-only JSON,
-      CC-BY-4.0 marker); the actual publication waits for real data and the repo's creation
+      CC-BY-4.0 marker) and the full publication procedure is written up in
+      [`docs/tpt-fab-data-release-runbook.md`](./docs/tpt-fab-data-release-runbook.md)
+      (produce → verify no raw fields → land append-only in `tpt-fab-data` → tag); the actual
+      publication waits for real data and the repo's creation
 - [ ] **Milestone:** a sky130 MPW shuttle-run result round-trips end to end — design exported, real
       silicon returned, outcome file generated locally, emailed, manually ingested — without a
       design partner — **the software path is complete and tested** (file → signature verify →
@@ -186,8 +204,20 @@ contribution volume (dataset publication).
   Avoids over-fitting to one program before any real hardware validation. *`DuvProfile::GenericArFi`
   is the only profile; the enum is the future seam.*
 
+## Semi-automated intake (designed & implemented ahead of volume)
+
+- [x] Operational cost of manual signature verification / file ingestion at `tpt-solutions` as
+      contribution volume grows — the semi-automated intake queue is designed **and
+      implemented** as `crates/tpt-fab-intake` (library + `tpt-fab-intake` CLI): point it at a
+      directory of manually-delivered files and it verifies signatures, validates schema,
+      enforces consent (`NoSharing` refused), screens against the *accumulated* anomaly
+      distribution (history persists in a JSON ledger across runs), and files each report into
+      `accepted/` / `flagged/` / `rejected/` with every decision recorded. Entirely local —
+      no egress, no daemon, no schedule; the human still makes every value judgment.
+      *What remains open is purely operational, not technical:* staffing the review of flagged
+      files and deciding the actual send/receive channels once real fabs contribute.
+
 ## Still genuinely open (not resolved, flagged for later)
 
-- [ ] Operational cost of manual signature verification / file ingestion at `tpt-solutions` as
-      contribution volume grows — design a semi-automated intake queue once volume exceeds a
-      handful of fabs/month. Operations question, not a technical blocker for Phases 1–4.
+- (none — the intake-queue question above was the last one implementable in this repo;
+  everything left in Phases 4–5 waits on external parties or real data)

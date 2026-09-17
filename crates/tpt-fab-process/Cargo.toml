@@ -1,6 +1,9 @@
 [package]
 name = "tpt-fab-process"
 description = "Best-effort OPC suggestions and coarse etch/deposition/thermal process simulation, plus the sky130 MPW shuttle-run ingestion path"
+keywords = ["opc", "sky130", "mpw", "process-simulation", "semiconductor"]
+categories = ["simulation", "science"]
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -14,6 +14,13 @@ name = "tpt-fab-aggregate"
 version = "0.1.0"
 
 [[package]]
+name = "tpt-fab-intake"
+version = "0.1.0"
+dependencies = [
+ "tpt-fab-aggregate",
+]
+
+[[package]]
 name = "tpt-fab-litho"
 version = "0.1.0"
 

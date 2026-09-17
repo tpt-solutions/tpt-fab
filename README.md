@@ -30,12 +30,26 @@ enough to matter to them, not to match a $10M TCAD license.
 
 ## Crates
 
+Each crate has its own README (usage, module map, design notes), CHANGELOG, and runnable
+examples under `examples/`.
+
 | Crate | Role |
 |---|---|
-| [`tpt-fab`](./crates/tpt-fab) | Core: HSMS/SECS-II/GEM300 message stack, recipe versioning + drift detection, lot tracking, equipment-simulator harness, opt-in vendor adapter seam |
-| [`tpt-fab-litho`](./crates/tpt-fab-litho) | Pluggable `PatterningBackend` trait: DUV multi-patterning, EUV, nanoimprint (J-FIL-style), e-beam |
-| [`tpt-fab-process`](./crates/tpt-fab-process) | Explicitly best-effort OPC suggestions + coarse etch/deposition/thermal simulation; sky130 MPW shuttle-run ingestion path |
-| [`tpt-fab-aggregate`](./crates/tpt-fab-aggregate) | The Manufacturing Outcome file exchange: schema, consent, client-side aggregation, minimum-cohort + differential-privacy protection. **Zero dependencies, zero network code — auditable by construction.** |
+| [`tpt-fab`](./crates/tpt-fab/README.md) | Core: HSMS/SECS-II/GEM300 message stack, recipe versioning + drift detection, lot tracking, equipment-simulator harness, opt-in vendor adapter seam |
+| [`tpt-fab-litho`](./crates/tpt-fab-litho/README.md) | Pluggable `PatterningBackend` trait: DUV multi-patterning, EUV, nanoimprint (J-FIL-style), e-beam |
+| [`tpt-fab-process`](./crates/tpt-fab-process/README.md) | Explicitly best-effort OPC suggestions + coarse etch/deposition/thermal simulation; sky130 MPW shuttle-run ingestion path |
+| [`tpt-fab-aggregate`](./crates/tpt-fab-aggregate/README.md) | The Manufacturing Outcome file exchange: schema, consent, client-side aggregation, minimum-cohort + differential-privacy protection. **Zero dependencies, zero network code — auditable by construction.** |
+| [`tpt-fab-intake`](./crates/tpt-fab-intake/README.md) | Receiver-side semi-automated intake queue: signature verify, schema check, consent enforce, anomaly screen → accepted/flagged/rejected, with a persistent decision ledger. Local files only |
+
+Quick tours without real hardware:
+
+```sh
+cargo run -p tpt-fab --example full_session          # a complete SECS/GEM recipe cycle
+cargo run -p tpt-fab-litho --example plan_layer      # one layer planned by all four backends
+cargo run -p tpt-fab-aggregate --example pcb_track   # the PCB track against the shared schema
+cargo run -p tpt-fab-process --example sky130_ingest # shuttle results through the cohort gate
+cargo run -p tpt-fab-intake --example intake_api    # the receiver-side intake queue
+```
 
 ## The outcome file exchange is a file exchange, not a service
 

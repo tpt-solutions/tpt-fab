@@ -1,6 +1,9 @@
 [package]
 name = "tpt-fab-aggregate"
 description = "Manufacturing Outcome file exchange: schema, consent, client-side aggregation, minimum-cohort + differential-privacy protection. Zero dependencies, zero network code."
+keywords = ["privacy", "differential-privacy", "hmac-sha256", "aggregation", "manufacturing"]
+categories = ["cryptography", "encoding", "data-structures"]
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

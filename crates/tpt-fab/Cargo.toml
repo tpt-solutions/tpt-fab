@@ -1,6 +1,9 @@
 [package]
 name = "tpt-fab"
 description = "Wafer-fab SECS/GEM core: HSMS/SECS-II/GEM300 stack, recipe versioning + drift detection, lot tracking, equipment-simulator harness"
+keywords = ["secs", "hsms", "secs-ii", "gem", "semiconductor"]
+categories = ["network-programming", "simulation", "science", "emulation"]
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
